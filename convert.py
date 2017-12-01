@@ -3,7 +3,47 @@ import json
 import os
 
 
-BASE_PATH = "/Users/knut/Downloads"
+BASE_PATH = "/Users/knut/projects/offenerhaushalt.de/bremen"
+
+
+def read_chapters():
+    chapters = {}
+    with open("./kapitel.csv") as infile:
+        reader = csv.reader(infile)
+        for line in reader:
+            chapters[line[0]] = line[1]
+    return chapters
+
+
+def add_chapters(line):
+    # These were extracted by hand from the PDFs from the website
+    einzelplan = {
+        "00": "Bürgerschaft, Senat, Rechnungshof, Staatsgerichtshof, Bundesangelegenheiten, Datenschutz, Inneres, Frauen (L)",
+        "01": "Justiz und Verfassung (L)",
+        "02": "Kinder und Bildung, Kultur und Wissenschaft (L)",
+        "03": "Arbeit (L)",
+        "04": "Jugend, Soziales, Integration (L)",
+        "05": "Gesundheit (L)",
+        "06": "Umwelt, Bau und Verkehr (L)",
+        "07": "Wirtschaft (L)",
+        "08": "Häfen (L)",
+        "09": "Finanzen (L)",
+        "30": "Bürgerschaft, Senat, Inneres (S)",
+        "31": "Sport (S)",
+        "32": "Kinder und Bildung, Kultur (S)",
+        "33": "Arbeit (S)",
+        "34": "Jugend, Soziales (S)",
+        "35": "Gesundheit (S)",
+        "36": "Umwelt, Bau und Verkehr (S)",
+        "37": "Wirtschaft (S)",
+        "38": "Häfen (S)",
+        "39": "Finanzen (S)"
+    }
+    kapitel = read_chapters()
+    line["Einzelplan_Name"] = einzelplan[line["Hst."][:2]]
+    line["Kapitel_Name"] = kapitel.get(line["Hst."][:4], "[keine Angabe ({})]".format(line["Hst."][:4]))
+
+    return line
 
 
 def save_as_json(data, name):
@@ -50,9 +90,27 @@ def save_data(data):
             writer.writerow(row)
 
 
+def split_years(data):
+    new_haushalt = []
+    for line in data:
+        value_2016 = line.pop("Anschlag 2016")
+        value_2017 = line.pop("Anschlag 2017")
+
+        line_2016 = line.copy()
+        line_2017 = line.copy()
+        line_2016["year"] = "2016"
+        line_2017["year"] = "2017"
+        line_2016["Betrag"] = value_2016
+        line_2017["Betrag"] = value_2017
+        new_haushalt.append(line_2016)
+        new_haushalt.append(line_2017)
+    return new_haushalt
+
+
+
 def enrich_haushalt():
     with open(os.path.join(BASE_PATH, "Haushaltsdaten_2016-2017.csv")) as infile:
-        reader = [row for row in csv.DictReader(infile)]
+        reader = list(csv.DictReader(infile))
         groups = get_json("gruppen")
         functions = get_json("funktionen")
         for line in reader:
@@ -64,7 +122,10 @@ def enrich_haushalt():
             line["Funktion 3"] = functions.get(funktion, "N/A")
             line["Funktion 2"] = functions[funktion[:2] + "*"]
             line["Funktion 1"] = functions[funktion[:1] + "**"]
-        save_data(reader)
+            line["Art"] = "Einnahmen" if line["Aggregat"].startswith("EINN") else "Ausgaben"
+            add_chapters(line)
+        split = split_years(reader)
+        save_data(split)
 
 
 def main():
